@@ -115,7 +115,16 @@
     if (closeBtn) closeBtn.addEventListener('click', close);
     if (backdrop) backdrop.addEventListener('click', close);
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && nav.getAttribute('data-open') === 'true') close();
+      if (nav.getAttribute('data-open') !== 'true') return;
+      if (e.key === 'Escape') { close(); return; }
+      if (e.key !== 'Tab') return;
+      // The open menu covers the page, so keep Tab / Shift+Tab inside it.
+      const items = [...nav.querySelectorAll('a[href], button:not([disabled])')].filter((n) => n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden');
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (!nav.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+      else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     });
   }
 
@@ -130,6 +139,11 @@
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     onScroll();
+    // Sticky offset: only the main bar stays pinned, so the header sticks at minus the top bar's height
+    const topbar = header.querySelector('.header-topbar');
+    const setTopbarHeight = () => root.style.setProperty('--topbar-h', (topbar ? topbar.offsetHeight : 0) + 'px');
+    setTopbarHeight();
+    window.addEventListener('resize', setTopbarHeight, { passive: true });
   }
 
   /* ------------------------------------------------------------------
@@ -153,7 +167,23 @@
         if (e.key === 'Escape') { menu.classList.add('is-dismissed'); var l = menu.querySelector('.nav-menu__link'); if (l) { l.focus(); } }
       });
       menu.addEventListener('mouseleave', function () { menu.classList.remove('is-dismissed'); });
-      menu.addEventListener('focusout', function (e) { if (!menu.contains(e.relatedTarget)) { menu.classList.remove('is-dismissed'); } });
+      menu.addEventListener('focusout', function (e) { if (!menu.contains(e.relatedTarget)) { menu.classList.remove('is-dismissed'); menu.classList.remove('is-open'); } });
+      // Touch screens and tablet viewports (1024px): tap/click on "Home" opens the dropdown instead of immediate navigation
+      var link = menu.querySelector('.nav-menu__link');
+      if (link) {
+        link.addEventListener('click', function (e) {
+          if (window.innerWidth <= 1199 || window.matchMedia('(hover: none)').matches) {
+            if (!menu.classList.contains('is-open')) {
+              e.preventDefault();
+              menu.classList.remove('is-dismissed');
+              menu.classList.add('is-open');
+            }
+          }
+        });
+      }
+    });
+    document.addEventListener('click', function (e) {
+      document.querySelectorAll('.nav-menu.is-open').forEach(function (menu) { if (!menu.contains(e.target)) { menu.classList.remove('is-open'); } });
     });
     document.querySelectorAll('.mobile-nav-group__toggle').forEach(function (btn) {
       var list = document.getElementById(btn.getAttribute('aria-controls'));
@@ -334,6 +364,8 @@
      ------------------------------------------------------------------ */
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const PHONE_RE = /^[+]?[\d\s().-]{7,20}$/;
+  // Forms only simulate a send until an endpoint is configured, so success messages say so — remove once it is.
+  const DEMO_NOTE = '(Demo mode — nothing was sent.)';
 
   function setFieldError(field, message) {
     const wrap = field.closest('.field');
@@ -435,8 +467,11 @@
       if (submitBtn) submitBtn.classList.remove('is-loading');
       form.reset();
       form.querySelectorAll('.upload-list').forEach((list) => (list.innerHTML = ''));
-      if (successEl) successEl.hidden = false;
-      showToast({ type: 'success', title: 'Request received', message: "We'll be in touch within one business day." });
+      if (successEl) {
+        successEl.hidden = false;
+        if (!successEl.querySelector('[data-demo-note]')) successEl.insertAdjacentHTML('beforeend', ` <span data-demo-note>${DEMO_NOTE}</span>`);
+      }
+      showToast({ type: 'success', title: 'Request received', message: `We'll be in touch within one business day. ${DEMO_NOTE}` });
       if (typeof onSuccess === 'function') onSuccess();
     }, 900);
   }
@@ -463,7 +498,7 @@
           return;
         }
         // TODO: Replace with Mailchimp / ConvertKit form action + list ID
-        showToast({ type: 'success', title: 'Subscribed', message: "You're on the list for uniform & workwear updates." });
+        showToast({ type: 'success', title: 'Subscribed', message: `You're on the list for uniform & workwear updates. ${DEMO_NOTE}` });
         form.reset();
       });
     });
